@@ -253,8 +253,7 @@ details.fold > summary { cursor:pointer; padding:10px 16px; font-size:13px; font
   <div class="results" id="results">
     <div class="filter-bar" id="filterBar">
       <span><span class="fb-label">施策：</span><span id="fbShisaku"></span></span>
-      <span><span class="fb-label">提供ツール：</span><span id="fbTool"></span></span>
-      <span><span class="fb-label">表示：</span><span id="fbShow"></span></span>
+      <span class="fb-note">月額案件は全件を表示します。提供ツール（モノ／チェキ／なし）ごとに、順位の調子が悪い順に並べています</span>
     </div>
     <div class="shot-bar">
       <button class="shot-btn" id="shotBtn">📷 画像でコピー</button>
@@ -642,17 +641,17 @@ function runMatch() {
         const m = uid && monoUD[uid] ? monoUD[uid] : null, c = chekiUD[custNum] || null;
         const useMono = (tool==='チェキ') ? (!c && !!m) : !!m;
         const days = useMono ? m : c, src = useMono ? 'モノ' : 'チェキ';
-        const base = { 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, 施策:shisaku };
+        const base = { 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, 施策:shisaku, status:(row['ステータス']||'').trim() };
         if (!days) {
           let reason;
           if (tool==='モノ' && !toolFiles.length) reason = 'モノCSVが未投入';
           else if (tool==='チェキ' && !chekiFiles.length) reason = 'チェキCSVが未投入';
           else if (toolKind(tool)==='なし') reason = '提供ツールなし・どのCSVにもデータなし（順位を確認する手段がない）';
           else reason = tool + 'CSVに該当なし' + (tool==='モノ' && !uid ? '（モノ顧客番号が空欄）' : '');
-          noData.push(Object.assign(base, { reason }));
+          rows.push(Object.assign(base, { noData:true, reason }));
           continue;
         }
-        rows.push(Object.assign(base, { src: src!==tool ? src : '', last7:days.slice(-7) }, monitorStats(days)));
+        rows.push(Object.assign(base, { noData:false, src: src!==tool ? src : '', last7:days.slice(-7) }, monitorStats(days)));
       }
       lastResult = { rows, noData, cutoffYMD };
       renderAll(true);
@@ -662,19 +661,13 @@ function runMatch() {
 }
 
 // ─── 絞り込み ─────────────────────────────────────────
-const curFilter = { shisaku:'all', tool:'all', show:'bad' };
+const curFilter = { shisaku:'all' };
 function passFilter(r) {
-  if (curFilter.shisaku !== 'all' && (r.施策||'') !== curFilter.shisaku) return false;
-  if (curFilter.tool !== 'all' && toolKind(r.提供ツール) !== curFilter.tool) return false;
-  return true;
+  return curFilter.shisaku === 'all' || (r.施策||'') === curFilter.shisaku;
 }
 function buildFilterBar() {
-  const mk = (id, key, opts) => {
-    document.getElementById(id).innerHTML = opts.map(([v,l]) => `<button data-k="${key}" data-v="${v}" class="${curFilter[key]===v?'on':''}">${l}</button>`).join('');
-  };
-  mk('fbShisaku', 'shisaku', [['all','すべて'],['モノ','モノ'],['自社','自社']]);
-  mk('fbTool', 'tool', [['all','すべて'],['モノ','モノ'],['チェキ','チェキ'],['なし','なし']]);
-  mk('fbShow', 'show', [['bad','とれていないだけ'],['all','全件']]);
+  document.getElementById('fbShisaku').innerHTML = [['all','すべて'],['モノ','モノ'],['自社','自社']]
+    .map(([v,l]) => `<button data-k="shisaku" data-v="${v}" class="${curFilter.shisaku===v?'on':''}">${l}</button>`).join('');
 }
 document.getElementById('filterBar').addEventListener('click', e => {
   const b = e.target.closest('button[data-k]'); if (!b) return;
@@ -688,32 +681,42 @@ function shisakuChip(v) { const m={'モノ':'background:#fff0d6;color:#e07b00','
 function renderAll(scroll) {
   if (!lastResult) return;
   buildFilterBar();
-  const R = lastResult, rows = R.rows.filter(passFilter), noData = R.noData.filter(passFilter);
-  const bad = rows.filter(r => r.bad).sort((a,b)=> a.rate-b.rate || b.streak-a.streak);
-  const good = rows.filter(r => !r.bad).sort((a,b)=> a.rate-b.rate);
+  const R = lastResult, all = R.rows.filter(passFilter);
   const pct = v => Math.round(v*100) + '%';
-  const table = list => `<table><thead><tr><th>顧客番号</th><th>案件名</th><th>施策</th><th>提供ツール</th><th>直近30日の3位以内</th><th>連続未達</th><th>直近7日</th></tr></thead><tbody>` +
-    list.map(r => `<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${shisakuChip(r.施策)}</td><td>${toolChip(r.提供ツール)}${r.src?`<div style="font-size:10px;color:#888;margin-top:2px">${esc(r.src)}CSVで確認</div>`:''}</td>` +
-      `<td><strong style="color:${r.rate<0.3?'#b3120f':r.rate<0.7?'#b06000':'#1a8e3e'}">${pct(r.rate)}</strong><span style="color:#888;font-size:11px;margin-left:4px">（${r.wins}/${r.total}日）</span></td>` +
-      `<td>${r.streak>0?`<span style="color:${r.streak>=3?'#b3120f':'#666'};font-weight:700">${r.streak}日</span>`:'<span style="color:#aaa">-</span>'}</td><td>${renderLast7(r.last7)}</td></tr>`).join('') + `</tbody></table>`;
+  // 調子が悪い順：とれていない → とれている → データなし。同じ中では達成率の低い順、連続未達の長い順
+  const rank = r => r.noData ? 2 : (r.bad ? 0 : 1);
+  const sorter = (a,b) => rank(a)-rank(b) || (a.rate||0)-(b.rate||0) || (b.streak||0)-(a.streak||0);
+  const stChip = r => (r.status && r.status!=='施策中') ? `<div style="font-size:10px;color:#b06000;margin-top:2px">${esc(r.status)}</div>` : '';
+  const rowHtml = r => r.noData
+    ? `<tr style="background:#fafafa"><td><span style="color:#999;font-weight:700">－ データなし</span></td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td><td colspan="3" style="font-size:12px;color:#888">${esc(r.reason)}</td></tr>`
+    : `<tr${r.bad?' style="background:#fff5f4"':''}><td>${r.bad?'<span style="color:#b3120f;font-weight:700">● とれていない</span>':'<span style="color:#1a8e3e;font-weight:700">● とれている</span>'}</td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td>` +
+      `<td><strong style="color:${r.rate<0.3?'#b3120f':r.rate<0.7?'#b06000':'#1a8e3e'}">${pct(r.rate)}</strong><span style="color:#888;font-size:11px;margin-left:4px">（${r.wins}/${r.total}日）</span>${r.src?`<div style="font-size:10px;color:#888;margin-top:2px">${esc(r.src)}CSVで確認</div>`:''}</td>` +
+      `<td>${r.streak>0?`<span style="color:${r.streak>=3?'#b3120f':'#666'};font-weight:700">${r.streak}日</span>`:'<span style="color:#aaa">-</span>'}</td><td>${renderLast7(r.last7)}</td></tr>`;
+  const table = list => `<table><thead><tr><th>判定</th><th>顧客番号</th><th>案件名</th><th>施策</th><th>直近30日の3位以内</th><th>連続未達</th><th>直近7日</th></tr></thead><tbody>` + list.map(rowHtml).join('') + `</tbody></table>`;
+  const GROUPS = [
+    { key:'モノ',   cls:'p1',  title:'提供ツール：モノ' },
+    { key:'チェキ', cls:'good', title:'提供ツール：チェキ' },
+    { key:'なし',   cls:'',    title:'提供ツール：なし', style:'border-left:4px solid #888', hstyle:'background:#607d8b' },
+  ];
+  const sections = GROUPS.map(g => {
+    const list = all.filter(r => toolKind(r.提供ツール) === g.key).sort(sorter);
+    const nb = list.filter(r => !r.noData && r.bad).length, ng = list.filter(r => !r.noData && !r.bad).length, nn = list.filter(r => r.noData).length;
+    return `<div class="pattern-section ${g.cls}" ${g.style?`style="${g.style}"`:''}><div class="pattern-header" ${g.hstyle?`style="${g.hstyle}"`:''}><div class="ph-num">${esc(g.key[0])}</div><div><div class="ph-title">${g.title}</div>
+      <div class="ph-sub">とれていない ${nb} 件 ／ とれている ${ng} 件${nn?` ／ データなし ${nn} 件`:''}　※調子が悪い順</div></div><div class="ph-count">${list.length} 件</div></div>
+      <div class="pattern-body">${list.length?table(list):'<div class="empty-msg">該当するデータはありません</div>'}</div></div>`;
+  }).join('');
+  const judged = all.filter(r => !r.noData), bad = judged.filter(r => r.bad), good = judged.filter(r => !r.bad);
   let dl=''; if (R.cutoffYMD) { const [y,m,d]=R.cutoffYMD.split('-'); dl=`<span style="font-size:12px;color:#00695c;background:#e0f2f1;padding:4px 12px;border-radius:20px;font-weight:700;">📅 ${y}年${m}月${d}日 時点</span>`; }
-  const filt = (curFilter.shisaku!=='all'||curFilter.tool!=='all') ? `<span style="font-size:11px;color:#b06000;font-weight:700">絞り込み中（施策：${curFilter.shisaku==='all'?'すべて':curFilter.shisaku}／ツール：${curFilter.tool==='all'?'すべて':curFilter.tool}）</span>` : '';
-  const section = (cls, mark, title, sub, list) => `<div class="pattern-section ${cls}"><div class="pattern-header"><div class="ph-num">${mark}</div><div><div class="ph-title">${title}</div><div class="ph-sub">${sub}</div></div><div class="ph-count">${list.length} 件</div></div>
-    <div class="pattern-body">${list.length?table(list):'<div class="empty-msg">該当するデータはありません</div>'}</div></div>`;
+  const filt = curFilter.shisaku!=='all' ? `<span style="font-size:11px;color:#b06000;font-weight:700">絞り込み中（施策：${curFilter.shisaku}）</span>` : '';
   document.getElementById('captureArea').innerHTML = `
     <div class="mon-summary">${dl}${filt}<span style="font-weight:700;color:#00695c">月額案件の順位</span>
-      <span>確認できた<strong>${rows.length}</strong>件</span>
-      <span style="color:#1a8e3e">とれている<strong>${good.length}</strong>件（${rows.length?pct(good.length/rows.length):'-'}）</span>
+      <span>全<strong>${all.length}</strong>件</span>
       <span style="color:#b3120f">とれていない<strong>${bad.length}</strong>件</span>
-      <span style="color:#888">順位データなし<strong style="font-size:15px">${noData.length}</strong>件</span>
+      <span style="color:#1a8e3e">とれている<strong>${good.length}</strong>件${judged.length?`（${pct(good.length/judged.length)}）`:''}</span>
+      <span style="color:#888">データなし<strong style="font-size:15px">${all.length-judged.length}</strong>件</span>
       <span style="font-size:11px;color:#888;width:100%">「とれていない」＝3日連続で3位以内に入れず、その後3日連続の3位以内に戻っていない（成果報酬なら▲に落ちている状態）、または直近30日で3位以内が0日${unmeasuredChekiDays.length?`　／　⚠️ チェキ：${unmeasuredChekiDays.join('、')} は未計測日として除外`:''}</span>
-    </div>` +
-    section('p4', '!', '順位がとれていない', '達成率の低い順。解約リスクの高い順に確認・対策を', bad) +
-    (curFilter.show==='all' ? section('good', '✓', '順位がとれている', '達成率の低い順（下に行くほど安定）', good) : '');
-  document.getElementById('noDataArea').innerHTML = noData.length===0 ? '' :
-    `<div class="pattern-section" style="border-left:4px solid #888"><details class="fold"><summary>順位データなし：${noData.length} 件 ― クリックで開く（画像コピーには含まれません）</summary>
-     <table><thead><tr><th>顧客番号</th><th>案件名</th><th>施策</th><th>提供ツール</th><th>理由</th></tr></thead><tbody>` +
-     noData.map(r=>`<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${shisakuChip(r.施策)}</td><td>${toolChip(r.提供ツール)}</td><td style="font-size:12px;color:#555">${esc(r.reason)}</td></tr>`).join('') + `</tbody></table></details></div>`;
+    </div>` + sections;
+  document.getElementById('noDataArea').innerHTML = '';
   const r=document.getElementById('results'); r.classList.add('visible'); if (scroll) r.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function renderLast7(days) {
@@ -764,7 +767,7 @@ function showKintoneSummary() {
     item('月額固定', meoData.length) +
     item('施策モノ', cnt(r => (r['施策']||'').trim()==='モノ')) + item('施策自社', cnt(r => (r['施策']||'').trim()==='自社')) +
     item('ツールなし', cnt(r => toolKind((r['提供ツール']||'').trim())==='なし')) +
-    '<div class="ks-condition"><span class="ks-cond-label">契約プラン：</span>月額固定のみ　／　<span class="ks-cond-label">ステータス：</span>施策中・施策中(要対応)・施策中(HP課金中)</div>' +
+    '<div class="ks-condition"><span class="ks-cond-label">契約プラン：</span>月額固定のみ　／　<span class="ks-cond-label">ステータス：</span>施策中・施策中(HP課金中)・対応待ち(課金中)</div>' +
     (meoData.length === 0 ? '<div class="ks-condition" style="color:#d93025;font-weight:700">月額固定の案件が0件です。取得データに「契約プラン」列が無い可能性があります（予備のCSVを使う場合は契約プラン・施策・モノ顧客番号の列を含めて書き出してください）</div>' : '');
   document.getElementById('kintoneSummary').classList.add('visible');
 }
