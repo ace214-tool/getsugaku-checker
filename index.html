@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>月額案件チェック</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Hiragino Sans', 'Meiryo', 'Yu Gothic', sans-serif;
+  background: #f0f2f5;
+  color: #333;
+  min-height: 100vh;
+}
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+header {
+  background: linear-gradient(135deg, #00897b, #004d40);
+  color: white; padding: 24px 32px; border-radius: 12px;
+  margin-bottom: 24px; box-shadow: 0 4px 16px rgba(0,105,92,0.35);
+}
+header h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.03em; }
+header p { font-size: 13px; opacity: 0.8; margin-top: 6px; }
+
+.upload-card {
+  background: white; border-radius: 12px; padding: 24px;
+  margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.drop-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px;
+}
+.drop-slot {
+  display: flex; border-radius: 10px; overflow: hidden; cursor: pointer;
+  border: 2px dashed #c5d3e8; background: #fafbfc; transition: all 0.2s; min-height: 80px;
+}
+.drop-slot:hover, .drop-slot.drag-over { border-color: #1a73e8; background: #e8f0fe; }
+.drop-slot.loaded { border-style: solid; border-color: #c5d3e8; background: #f8f9fa; }
+.ds-color { width: 6px; flex-shrink: 0; }
+.ds-body { padding: 12px 16px; flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.ds-label { font-size: 14px; font-weight: 700; }
+.ds-hint { font-size: 11px; color: #aaa; margin-top: 2px; }
+.ds-status { font-size: 12px; color: #666; margin-top: 6px; }
+
+.auto-msg { text-align: center; margin-top: 12px; font-size: 13px; color: #1a73e8; font-weight: 700; display: none; }
+.auto-msg.visible { display: block; }
+
+.date-card {
+  background: white; border-radius: 12px; padding: 18px 24px; margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+}
+.date-card label { font-size: 14px; font-weight: 700; color: #333; white-space: nowrap; }
+.date-card .date-note { font-size: 12px; color: #888; }
+.date-input {
+  border: 2px solid #c5d3e8; border-radius: 8px; padding: 8px 14px; font-size: 15px;
+  font-family: inherit; color: #333; background: #f8faff; cursor: pointer; outline: none;
+}
+.date-input:focus { border-color: #1a73e8; background: #e8f0fe; }
+.date-tag { font-size: 12px; background: #e8f0fe; color: #1a73e8; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
+
+.btn-area { text-align: center; margin-bottom: 28px; }
+.btn-match {
+  background: linear-gradient(135deg, #1a73e8, #0d47a1); color: white; border: none;
+  padding: 14px 52px; border-radius: 8px; font-size: 16px; font-weight: 700;
+  cursor: pointer; letter-spacing: 0.05em; box-shadow: 0 4px 14px rgba(26,115,232,0.35);
+}
+.btn-match:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(26,115,232,0.45); }
+.btn-match:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; }
+
+.results { display: none; }
+.results.visible { display: block; }
+.summary-bar {
+  background: white; border-radius: 12px; padding: 16px 24px; margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+}
+.summary-label { font-weight: 700; font-size: 14px; color: #333; margin-right: 4px; }
+.summary-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.s-badge { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; }
+.s-count { font-size: 22px; font-weight: 800; line-height: 1; }
+.s-unit { font-size: 12px; color: #999; }
+.s-total { margin-left: auto; font-size: 13px; color: #555; }
+
+.pattern-section { background: white; border-radius: 12px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; }
+.pattern-header { padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+.ph-num { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; color: white; flex-shrink: 0; }
+.ph-title { font-size: 15px; font-weight: 700; color: white; }
+.ph-sub { font-size: 11px; color: rgba(255,255,255,0.8); margin-top: 2px; }
+.ph-count { margin-left: auto; background: rgba(255,255,255,0.25); color: white; font-weight: 700; font-size: 14px; padding: 4px 14px; border-radius: 20px; }
+.pattern-body { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th { padding: 10px 14px; text-align: left; font-weight: 600; background: #f8f9fa; border-bottom: 2px solid #e8eaed; white-space: nowrap; color: #555; }
+tbody tr { border-bottom: 1px solid #f0f0f0; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: #f8f9fa; }
+tbody td { padding: 10px 14px; white-space: nowrap; }
+.date-val { color: #1a73e8; font-weight: 700; }
+.empty-msg { padding: 28px; text-align: center; color: #aaa; font-size: 13px; }
+.drop-slot-unified { padding: 32px 28px; cursor: pointer; }
+.drop-slot-unified.drag-over { background: #e8f0fe; border-color: #1a73e8; }
+.unified-status { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; font-size: 13px; }
+.us-item { padding: 6px 14px; border-radius: 8px; background: #f5f5f5; color: #888; font-weight: 600; white-space: nowrap; }
+.us-item.loaded { background: #e6f4ea; color: #1a8e3e; }
+.us-item.partial { background: #fef7e0; color: #b06000; }
+.us-item.us-reset { cursor: pointer; background: #fff; border: 1px solid #ddd; color: #999; font-size: 12px; }
+.us-item.us-reset:hover { color: #d93025; border-color: #d93025; }
+
+.day-icons-row { display: flex; gap: 3px; align-items: center; }
+.day-icon-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.day-icon-cell .di-label { font-size: 9px; color: #aaa; line-height: 1; }
+.day-icon-cell .di-icon { font-size: 15px; line-height: 1; }
+
+.p1 .pattern-header { background: linear-gradient(135deg, #f6a623, #e07b00); }
+.p3 .pattern-header { background: linear-gradient(135deg, #1a73e8, #0b47a1); }
+.p4 .pattern-header { background: linear-gradient(135deg, #ea4335, #b3120f); }
+.p5 .pattern-header { background: linear-gradient(135deg, #7b3fb5, #4a1d80); }
+.p5-color { color: #4a1d80; } .p5-bg { background: #4a1d80; }
+.filter-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px; background:#fff; border-radius:10px; padding:10px 16px; margin-bottom:12px; box-shadow:0 1px 4px rgba(0,0,0,.08); font-size:13px; }
+.filter-bar .fb-label { font-weight:700; color:#555; margin-right:4px; }
+.filter-bar button { border:1px solid #ccc; background:#fff; color:#444; padding:4px 12px; border-radius:16px; font-size:12px; font-weight:700; cursor:pointer; margin-right:4px; }
+.filter-bar button.on { background:#1a73e8; border-color:#1a73e8; color:#fff; }
+.filter-bar .fb-note { font-size:11px; color:#888; }
+.mini-chip { padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; white-space:nowrap; }
+.mon-summary { display:flex; flex-wrap:wrap; gap:16px; align-items:center; background:#fff; border-radius:10px; padding:12px 18px; margin-bottom:12px; box-shadow:0 1px 4px rgba(0,0,0,.08); font-size:13px; }
+.mon-summary strong { font-size:20px; margin:0 3px; }
+.pattern-section.good .pattern-header { background: linear-gradient(135deg, #34a853, #1e7e34); }
+details.fold > summary { cursor:pointer; padding:10px 16px; font-size:13px; font-weight:700; color:#555; }
+.p1-color { color: #e07b00; } .p3-color { color: #0b47a1; } .p4-color { color: #b3120f; }
+.p1-bg { background: #e07b00; } .p3-bg { background: #0b47a1; } .p4-bg { background: #b3120f; }
+
+.kintone-zone {
+  background: white; border-radius: 12px; padding: 16px 24px; margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.kintone-btn {
+  background: linear-gradient(135deg, #ea4335, #b3120f); color: white; border: none;
+  padding: 10px 22px; border-radius: 8px; font-size: 14px; font-weight: 700;
+  cursor: pointer; box-shadow: 0 2px 8px rgba(234,67,53,0.3); white-space: nowrap;
+}
+.kintone-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(234,67,53,0.4); }
+.kintone-btn:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; }
+.kintone-status { font-size: 13px; color: #666; }
+.csv-fallback {
+  width: 100%; border-top: 1px dashed #e8eaed; padding-top: 12px; margin-top: 8px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.cf-label { font-size: 12px; color: #888; white-space: nowrap; font-weight: 600; }
+.cf-slot {
+  flex: 1; min-width: 200px; padding: 10px 14px;
+  border: 1.5px dashed #c5d3e8; border-radius: 6px; background: #fafbfc; cursor: pointer;
+  font-size: 12px; color: #888; transition: all 0.2s; text-align: center;
+}
+.cf-slot:hover, .cf-slot.drag-over { border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; }
+.cf-slot.loaded { border-style: solid; border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; }
+
+.kintone-summary {
+  background: white; border-radius: 12px; padding: 16px 24px; margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  display: none; gap: 24px; align-items: center; flex-wrap: wrap;
+}
+.kintone-summary.visible { display: flex; }
+.ks-item { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.ks-label { color: #666; font-weight: 600; }
+.ks-value { font-size: 20px; font-weight: 800; color: #333; }
+.ks-rate { font-size: 12px; color: #999; margin-left: 2px; }
+.ks-badge { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: white; }
+.ks-badge.maru { background: #1a73e8; }
+.ks-badge.sankaku { background: #f6a623; }
+.ks-badge.blank { background: #999; }
+.ks-condition {
+  width: 100%; font-size: 11px; color: #888; margin-top: 4px;
+  border-top: 1px dashed #e8eaed; padding-top: 8px; line-height: 1.7;
+}
+.ks-condition .ks-cond-label { color: #555; font-weight: 700; margin-right: 2px; }
+
+.shot-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.shot-btn { background: #fff; color: #333; border: 1px solid #ccc; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.shot-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+.shot-btn:disabled { color: #aaa; cursor: wait; }
+.shot-status { font-size: 12px; color: #1a8e3e; font-weight: 600; }
+#captureArea { padding: 12px; }
+.download-area {
+  background: white; border-radius: 12px; padding: 24px; margin-top: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  display: none; flex-direction: column; gap: 16px;
+}
+.download-area.visible { display: flex; }
+.dl-block { padding: 18px 20px; background: #f8f9fa; border-radius: 10px; border-left: 4px solid #34a853; display: flex; flex-direction: column; gap: 8px; }
+.dl-block#dlBlock2 { border-left-color: #1a73e8; }
+.dl-block .download-btn { align-self: flex-start; }
+.dl-block#dlBlock2 .download-btn { background: linear-gradient(135deg, #1a73e8, #1557b0); box-shadow: 0 2px 8px rgba(26,115,232,0.3); }
+.dl-block#dlBlock2 .download-btn:hover { box-shadow: 0 4px 12px rgba(26,115,232,0.4); }
+.dl-block#dlBlock2 .download-count { color: #1a73e8; }
+.dl-note { font-size: 12px; color: #555; line-height: 1.7; margin-top: 4px; }
+.download-btn {
+  background: linear-gradient(135deg, #34a853, #1e7e34); color: white; border: none;
+  padding: 12px 28px; border-radius: 8px; font-size: 15px; font-weight: 700;
+  cursor: pointer; box-shadow: 0 2px 8px rgba(52,168,83,0.3);
+}
+.download-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(52,168,83,0.4); }
+.download-btn:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; }
+.download-count { font-size: 14px; font-weight: 700; color: #34a853; display: inline-block; margin-left: 12px; }
+
+@media (max-width: 700px) { .drop-grid { grid-template-columns: 1fr; } .summary-bar { gap: 12px; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>月額案件チェック</h1>
+    <p>月額固定の案件が、順位（3位以内）をとれているかを確認するツールです。kintoneは一切更新しません</p>
+  </header>
+
+  <div class="kintone-zone">
+    <button class="kintone-btn" id="kintoneBtn">🔄 ① MEO案件管理を最新取得</button>
+    <span class="kintone-status" id="kintoneStatus">kintoneから直接取得します</span>
+    <div class="csv-fallback">
+      <span class="cf-label">予備：</span>
+      <div class="cf-slot" id="dropSlot-meo">
+        <input type="file" accept=".csv" style="display:none" id="fileInput-meo">
+        <span id="fname-meo">📁 kintone標準CSV書き出しをドロップ or クリック</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="kintone-summary" id="kintoneSummary"></div>
+
+  <div class="upload-card">
+    <div class="drop-slot drop-slot-unified" id="dropSlot-tools">
+      <input type="file" accept=".csv" multiple style="display:none" id="fileInput-tools">
+      <div class="ds-body" style="width:100%">
+        <div class="ds-label" style="color:#444;font-size:16px;font-weight:700">② ツールCSVをドロップ（モノ・チェキ どちらか1つでもOK／前月＋当月の複数ファイル可）</div>
+        <div class="ds-hint" style="margin-top:4px">持っているファイルだけドロップすれば照合できます。ファイル名から自動振り分け。<br>月初など日数が足りないときは、前月分と当月分の両方をドロップすると日付順につないで判定します。</div>
+        <div class="unified-status">
+          <span class="us-item" id="us-tool">⬜ モノ（任意）</span>
+          <span class="us-item" id="us-cheki">⬜ チェキ（任意）</span>
+          <span class="us-item us-reset" id="us-reset" title="ツールCSVをすべてクリア">🗑 クリア</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="date-card">
+    <label for="judgeDate">📅 判定日</label>
+    <input type="date" id="judgeDate" class="date-input">
+    <span class="date-tag" id="dateTag"></span>
+    <span class="date-note">この日付までの順位データで判定します</span>
+  </div>
+
+  <div class="btn-area">
+    <button class="btn-match" id="btnMatch" disabled onclick="runMatch()">③ 順位を確認する</button>
+  </div>
+
+  <div class="results" id="results">
+    <div class="filter-bar" id="filterBar">
+      <span><span class="fb-label">施策：</span><span id="fbShisaku"></span></span>
+      <span><span class="fb-label">提供ツール：</span><span id="fbTool"></span></span>
+      <span><span class="fb-label">表示：</span><span id="fbShow"></span></span>
+    </div>
+    <div class="shot-bar">
+      <button class="shot-btn" id="shotBtn">📷 画像でコピー</button>
+      <span class="shot-status" id="shotStatus"></span>
+    </div>
+    <div id="captureArea"></div>
+    <div id="noDataArea" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<script>
+const KINTONE_GAS_URL = 'https://script.google.com/macros/s/AKfycbymkQZK5BB9DKc1JwMBMhse016CHIeE0sG9gcRVPvnnwoXlmVtkKBlEpzjOM-sS2esD6w/exec';
+
+let meoData = null;
+let toolFiles = [];  // モノ  [{name, data}] 前月＋当月など複数可
+let chekiFiles = []; // チェキ [{name, data, year, month}] 複数可
+let lastBuckets = null;
+let unmeasuredChekiDays = []; // チェキで未計測とみなして除外した日
+
+(function initDate() {
+  const inp = document.getElementById('judgeDate');
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const ymd = y.getFullYear() + '-' + String(y.getMonth()+1).padStart(2,'0') + '-' + String(y.getDate()).padStart(2,'0');
+  inp.value = ymd;
+  updateDateTag(ymd);
+  inp.addEventListener('change', () => updateDateTag(inp.value));
+})();
+function updateDateTag(ymd) {
+  if (!ymd) { document.getElementById('dateTag').textContent = ''; return; }
+  const [y, m, d] = ymd.split('-');
+  document.getElementById('dateTag').textContent = `${y}年${m}月${d}日 時点`;
+}
+
+function parseCSV(raw) {
+  raw = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = raw.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = splitCSVLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = splitCSVLine(lines[i]);
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h.trim()] = (vals[idx] ?? '').trim(); });
+    rows.push(obj);
+  }
+  return rows;
+}
+function splitCSVLine(line) {
+  const out = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (c === ',' && !inQ) { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur); return out;
+}
+
+// ─── ファイル名→自動振り分け ─────────────────────────────
+const FILE_RULES = [
+  { key: 'meo',   pattern: /^MEO案件管理/i,  label: 'MEO案件管理', encoding: 'UTF-8' },
+  { key: 'tool',  pattern: /^report_days/i,   label: 'モノ',        encoding: 'UTF-8' },
+  { key: 'cheki', pattern: /^MEO_google/i,    label: 'チェキ',      encoding: 'UTF-8' },
+];
+function detectSlot(fileName) {
+  for (const r of FILE_RULES) { if (r.pattern.test(fileName)) return r; }
+  return null;
+}
+
+// ─── 統合ドロップ ───────────────────────────────────────
+// MEO案件管理スロット（既存・kintone fallback用）
+(function() {
+  const slot = document.getElementById('dropSlot-meo');
+  const inp = document.getElementById('fileInput-meo');
+  if (!slot) return;
+  slot.addEventListener('click', () => inp.click());
+  inp.addEventListener('change', e => { handleSlotFiles('meo', Array.from(e.target.files)); inp.value = ''; });
+  slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
+  slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
+  slot.addEventListener('drop', e => { e.preventDefault(); slot.classList.remove('drag-over'); handleSlotFiles('meo', Array.from(e.dataTransfer.files)); });
+})();
+
+// ツール統合スロット（モノ・チェキ）
+(function() {
+  const slot = document.getElementById('dropSlot-tools');
+  const inp = document.getElementById('fileInput-tools');
+  if (!slot) return;
+  slot.addEventListener('click', () => inp.click());
+  inp.addEventListener('change', e => { handleUnifiedFiles(Array.from(e.target.files)); inp.value = ''; });
+  slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
+  slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
+  slot.addEventListener('drop', e => { e.preventDefault(); slot.classList.remove('drag-over'); handleUnifiedFiles(Array.from(e.dataTransfer.files)); });
+})();
+
+function handleUnifiedFiles(files) {
+  const unmatched = [];
+  for (const f of files) {
+    const rule = detectSlot(f.name);
+    if (!rule || rule.key === 'meo') {
+      unmatched.push(f.name);
+      continue;
+    }
+    readAndStore(f, rule);
+  }
+  if (unmatched.length > 0) {
+    alert('⚠️ ファイル名から判別できないため、以下は読み込めませんでした：\n\n' + unmatched.join('\n') + '\n\n対応ファイル名：\n・モノ：report_days_xxx.csv\n・チェキ：MEO_google_xxx.csv\n\n※MEO案件管理は上の「①」ボタンから取り込んでください');
+  }
+}
+
+function handleSlotFiles(slotKey, files) {
+  for (const f of files) {
+    const rule = FILE_RULES.find(r => r.key === slotKey);
+    if (!rule) continue;
+    // ファイル名がスロットのパターンと一致するか検証
+    const detected = detectSlot(f.name);
+    if (detected && detected.key !== slotKey) {
+      const ok = confirm('⚠️ 「' + f.name + '」は「' + detected.label + '」用のファイルに見えますが、\n「' + rule.label + '」スロットに入れようとしています。\n\nこのまま読み込みますか？');
+      if (!ok) continue;
+    }
+    readAndStore(f, rule);
+  }
+}
+function readAndStore(file, rule) {
+  if (rule.key === 'meo') {
+    if (meoData) return;
+  } else if (rule.key === 'tool') {
+    if (toolFiles.some(f => f.name === file.name)) return; // 同名ファイルの二重読込防止
+  } else if (rule.key === 'cheki') {
+    if (chekiFiles.some(f => f.name === file.name)) return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try { storeData(rule.key, file.name, parseCSV(e.target.result)); }
+    catch (err) { alert('CSV読み込みエラー (' + file.name + '): ' + err.message); }
+  };
+  reader.readAsText(file, rule.encoding);
+}
+function storeData(key, fileName, data) {
+  if (key === 'meo') {
+    meoData = data = data.filter(r => planOf(r) === 'monthly'); // 月額固定だけを対象にする
+    document.getElementById('dropSlot-meo').classList.add('loaded');
+    document.getElementById('fname-meo').textContent = '✅ ' + fileName + '（' + data.length + '行）';
+    showKintoneSummary();
+  }
+  else if (key === 'tool') { toolFiles.push({ name: fileName, data }); updateUnifiedStatus(); }
+  else if (key === 'cheki') {
+    // ファイル名「MEO_google_YYYY-MM-DD_YYYY-MM-DD.csv」から年月を抽出（取れなければ判定日の年月を採用）
+    const m = fileName.match(/_(\d{4})-(\d{2})-\d{2}_/);
+    let year = null, month = null;
+    if (m) { year = m[1]; month = m[2]; }
+    else {
+      const jv = document.getElementById('judgeDate').value;
+      if (jv) { year = jv.split('-')[0]; month = jv.split('-')[1]; }
+      else { const n = new Date(); year = String(n.getFullYear()); month = String(n.getMonth()+1).padStart(2,'0'); }
+      alert('⚠️ 「' + fileName + '」はファイル名から年月を判別できないため、判定日の年月（' + year + '/' + month + '）として扱います。\n前月分として使う場合は元のファイル名（MEO_google_YYYY-MM-DD_YYYY-MM-DD.csv）のままドロップしてください。');
+    }
+    chekiFiles.push({ name: fileName, data, year, month });
+    updateUnifiedStatus();
+  }
+  checkAutoRun();
+}
+
+// ツールCSVをすべてクリア
+document.getElementById('us-reset').addEventListener('click', () => {
+  toolFiles = []; chekiFiles = [];
+  const t = document.getElementById('us-tool'); t.className = 'us-item'; t.textContent = '⬜ モノ（任意）';
+  const c = document.getElementById('us-cheki'); c.className = 'us-item'; c.textContent = '⬜ チェキ（任意）';
+  updateBtnState();
+});
+
+function updateUnifiedStatus() {
+  const jv = document.getElementById('judgeDate').value;
+  const jvYM = jv ? jv.slice(0,7).replace('-', '/') : null; // 'YYYY/MM'
+
+  const elTool = document.getElementById('us-tool');
+  if (toolFiles.length) {
+    const keys = Object.keys(monoDateKeys(toolFiles, jv)).sort();
+    const range = keys.length ? keys[0].slice(5) + '〜' + keys[keys.length-1].slice(5) : '日付列なし';
+    const covers = keys.some(k => k.slice(0,7) === jvYM);
+    elTool.className = 'us-item ' + (covers ? 'loaded' : 'partial');
+    elTool.textContent = (covers ? '✅' : '⚠️') + ' モノ：' + toolFiles.length + 'ファイル（' + range + '）' + (covers ? '' : ' 判定月のデータなし');
+  }
+  const elCheki = document.getElementById('us-cheki');
+  if (chekiFiles.length) {
+    const months = [...new Set(chekiFiles.map(f => f.year + '/' + f.month))].sort();
+    const covers = months.includes(jvYM);
+    elCheki.className = 'us-item ' + (covers ? 'loaded' : 'partial');
+    elCheki.textContent = (covers ? '✅' : '⚠️') + ' チェキ：' + chekiFiles.length + 'ファイル（' + months.join('・') + '月）' + (covers ? '' : ' 判定月のデータなし');
+  }
+}
+// 判定日を変えたら表示も更新
+document.getElementById('judgeDate').addEventListener('change', updateUnifiedStatus);
+function checkAutoRun() {
+  updateBtnState();
+}
+function updateBtnState() {
+  document.getElementById('btnMatch').disabled = !meoData || !(toolFiles.length || chekiFiles.length);
+}
+
+// ================================================================
+//  共通：日付キーは 'YYYY/MM/DD'（複数ファイルを月またぎで並べるため）
+// ================================================================
+function ymdKey(y, m, d) { return String(y) + '/' + String(m).padStart(2,'0') + '/' + String(d).padStart(2,'0'); }
+function keyToLabel(k) { return k.slice(5); } // 'MM/DD'
+
+// 「M/DD」形式の列に年を補う。判定日が1月で列が12月なら前年扱い（年またぎ対応）
+function monoColToKey(col, judgeYMD, fileYear) {
+  const [M, D] = col.split('/').map(Number);
+  if (fileYear) return ymdKey(fileYear, M, D); // ファイル名 report_days_YYYYMM.csv の年を優先
+  let y, jm;
+  if (judgeYMD) { y = Number(judgeYMD.split('-')[0]); jm = Number(judgeYMD.split('-')[1]); }
+  else { const n = new Date(); y = n.getFullYear(); jm = n.getMonth()+1; }
+  if (M > jm) y -= 1;
+  return ymdKey(y, M, D);
+}
+// モノファイル群に含まれる日付キー一覧（ステータス表示用）
+function monoFileYear(name) { const m = name.match(/report_days_(\d{4})(\d{2})/i); return m ? m[1] : null; }
+function monoDateKeys(files, judgeYMD) {
+  const keys = {};
+  for (const f of files) {
+    if (!f.data.length) continue;
+    const fy = monoFileYear(f.name);
+    Object.keys(f.data[0]).forEach(h => { if (/^\d{1,2}\/\d{2}$/.test(h.trim())) keys[monoColToKey(h.trim(), judgeYMD, fy)] = true; });
+  }
+  return keys;
+}
+
+// ================================================================
+//  モノCSV 用ロジック（複数ファイル対応）
+// ================================================================
+function buildMonoDailyResults(files, cutoffYMD) {
+  const cutoffKey = cutoffYMD ? cutoffYMD.replace(/-/g, '/') : null;
+  const byUser = {}; // uid -> { key -> win }
+  for (const f of files) {
+    if (!f.data.length) continue;
+    const headers = Object.keys(f.data[0]);
+    const dateCols = headers.filter(h => /^\d{1,2}\/\d{2}$/.test(h.trim()));
+    const fy = monoFileYear(f.name);
+    for (const row of f.data) {
+      const uid = row['ユーザーID']; if (!uid) continue;
+      const m = byUser[uid] = byUser[uid] || {};
+      for (const col of dateCols) {
+        const key = monoColToKey(col.trim(), cutoffYMD, fy);
+        if (cutoffKey && key > cutoffKey) continue;
+        const v = (row[col]||'').trim();
+        if (v === '') continue; // 空セル＝未計測（その日のデータ無し）。「圏外」は計測済みの負け
+        const n = parseInt(v);
+        const win = !isNaN(n) && n >= 1 && n <= 3;
+        m[key] = (m[key] || false) || win; // 同一日は複数KW行のどれか1つでも3位以内なら勝ち
+      }
+    }
+  }
+  const result = {};
+  for (const [uid, m] of Object.entries(byUser)) {
+    result[uid] = Object.keys(m).sort().map(k => ({ key: k, date: keyToLabel(k), win: m[k] }));
+  }
+  return result;
+}
+
+// ================================================================
+//  チェキCSV 用ロジック（複数ファイル対応：1ファイル＝1か月）
+// ================================================================
+function buildChekiDailyResults(files, cutoffYMD) {
+  const cutoffKey = cutoffYMD ? cutoffYMD.replace(/-/g, '/') : null;
+  const byCust = {}; // custId -> { key -> win }
+  unmeasuredChekiDays = [];
+  for (const f of files) {
+    // チェキCSVは「-」が「未計測」と「3位圏外」の両方に使われる。
+    // その日の◯件数が全行の10%未満なら未計測日とみなして判定から除外する（8月実績は毎日約70%が◯）。
+    const total = f.data.length;
+    const measured = {};
+    for (let d = 1; d <= 31; d++) {
+      const wins = f.data.filter(r => { const v=(r[String(d)]||'').trim(); return v==='◯'||v==='○'||v==='〇'; }).length;
+      const present = f.data.filter(r => (r[String(d)]||'').trim() !== '').length;
+      measured[d] = present > 0 && wins >= Math.max(1, total * 0.1);
+      if (present > 0 && !measured[d]) {
+        const key = ymdKey(f.year, f.month, d);
+        if (!cutoffKey || key <= cutoffKey) unmeasuredChekiDays.push(keyToLabel(key) + '（◯' + wins + '件）');
+      }
+    }
+    for (const row of f.data) {
+      const mm = (row['施設名']||'').trim().match(/_([A-Z]{2}\d[\w\-]*)$/);
+      if (!mm) continue;
+      const custId = mm[1].trim();
+      const m = byCust[custId] = byCust[custId] || {};
+      for (let d = 1; d <= 31; d++) {
+        const v = (row[String(d)]||'').trim();
+        if (v === '' || !measured[d]) continue;
+        const key = ymdKey(f.year, f.month, d);
+        if (cutoffKey && key > cutoffKey) continue;
+        m[key] = v === '◯' || v === '○' || v === '〇';
+      }
+    }
+  }
+  const result = {};
+  for (const [custId, m] of Object.entries(byCust)) {
+    result[custId] = Object.keys(m).sort().map(k => ({ key: k, date: keyToLabel(k), win: m[k] }));
+  }
+  return result;
+}
+
+// ×→▲：1日でも勝ち／▲→〇：3日連続勝ち／〇→▲：3日連続負け（モノ・チェキ共通）
+function simulateStatus(dailyResults, initialStatus) {
+  let status = initialStatus || '×';
+  let firstSuccessDate = null;
+  for (let i = 0; i < dailyResults.length; i++) {
+    const { key, win } = dailyResults[i];
+    if (status === '×') { if (win) { status = '▲'; firstSuccessDate = key; } }
+    else if (status === '▲') { if (i>=2 && dailyResults[i-2].win && dailyResults[i-1].win && win) status = '〇'; }
+    else if (status === '〇') { if (i>=2 && !dailyResults[i-2].win && !dailyResults[i-1].win && !win) status = '▲'; }
+  }
+  return { status, firstSuccessDate };
+}
+const simulateMono = simulateStatus;
+const simulateCheki = simulateStatus;
+
+// 〇▲×の文字コード違いを吸収する正規化関数
+function normalizeStatus(v) {
+  if (!v) return '';
+  const t = String(v).trim();
+  if (t === '○' || t === '◯' || t === '〇') return '〇';
+  if (t === '▲') return '▲';
+  if (t === '×' || t.toLowerCase() === 'x') return '×';
+  return t;
+}
+
+// kintoneの「継続課金」現在値を判定の初期statusとして取り出す
+// keyField: 検索に使うフィールド名（'顧客番号'=デフォルト、'モノ顧客番号'=モノ用など）
+function getInitialStatusFromKintone(meoData, id, keyField) {
+  if (!meoData || !id) return '×';
+  const key = keyField || '顧客番号';
+  const row = meoData.find(r => (r[key]||'').trim() === id);
+  if (!row) return '×';
+  const n = normalizeStatus(row['継続課金']);
+  if (n === '〇' || n === '▲') return n;
+  return '×'; // 空白・×・その他は × として扱う
+}
+
+
+// ================================================================
+//  プラン・施策の分類
+// ================================================================
+// 契約プラン → seika（成果報酬・その他）／ s2m（3位以内(成⇒月)）／ monthly（月額固定）
+// ※「契約プラン」列が無い古いデータは全件 seika 扱い（従来どおりの動き）
+function planOf(row) {
+  const p = (row['契約プラン']||'').trim();
+  if (/月額/.test(p)) return 'monthly';
+  if (/成.{1,2}月/.test(p)) return 's2m';
+  return 'seika';
+}
+const PLAN_LABEL = { seika:'成果', s2m:'成⇒月', monthly:'月額' };
+const PLAN_STYLE = { seika:'background:#e8f0fe;color:#0b47a1', s2m:'background:#f1e6fb;color:#4a1d80', monthly:'background:#e0f2f1;color:#00695c' };
+function toolKind(t) { return (t==='モノ'||t==='チェキ') ? t : 'なし'; }
+
+// 直近30計測日の達成率／連続未達日数／仮想〇▲（〇スタートで成果報酬と同じルール：3日連続未達で▲、3日連続達成で〇）
+function monitorStats(days) {
+  const last30 = days.slice(-30);
+  const wins = last30.filter(d => d.win).length;
+  let streak = 0;
+  for (let i = days.length-1; i >= 0; i--) { if (!days[i].win) streak++; else break; }
+  const virtual = simulateStatus(days, '〇').status;
+  const bad = virtual === '▲' || (last30.length > 0 && wins === 0);
+  return { wins, total:last30.length, rate: last30.length ? wins/last30.length : 0, streak, virtual, bad };
+}
+
+// ================================================================
+//  照合メイン（月額固定のみ・見るだけ）
+// ================================================================
+let lastResult = null; // { rows, noData, cutoffYMD }
+function runMatch() {
+  if (!meoData) return;
+  const btn = document.getElementById('btnMatch');
+  btn.disabled = true; btn.textContent = '確認中...';
+  setTimeout(() => {
+    try {
+      const cutoffYMD = document.getElementById('judgeDate').value;
+      const monoUD  = toolFiles.length  ? buildMonoDailyResults(toolFiles, cutoffYMD)   : {};
+      const chekiUD = chekiFiles.length ? buildChekiDailyResults(chekiFiles, cutoffYMD) : {};
+      const rows = [], noData = [];
+      for (const row of meoData) {
+        const tool = (row['提供ツール']||'').trim(), custNum = (row['顧客番号']||'').trim();
+        const uid = (row['モノ顧客番号']||'').trim(), shisaku = (row['施策']||'').trim();
+        // 見るだけのツールなので、提供ツール欄に関係なく順位データがある方のCSVを使う（提供ツール側を優先）
+        const m = uid && monoUD[uid] ? monoUD[uid] : null, c = chekiUD[custNum] || null;
+        const useMono = (tool==='チェキ') ? (!c && !!m) : !!m;
+        const days = useMono ? m : c, src = useMono ? 'モノ' : 'チェキ';
+        const base = { 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, 施策:shisaku };
+        if (!days) {
+          let reason;
+          if (tool==='モノ' && !toolFiles.length) reason = 'モノCSVが未投入';
+          else if (tool==='チェキ' && !chekiFiles.length) reason = 'チェキCSVが未投入';
+          else if (toolKind(tool)==='なし') reason = '提供ツールなし・どのCSVにもデータなし（順位を確認する手段がない）';
+          else reason = tool + 'CSVに該当なし' + (tool==='モノ' && !uid ? '（モノ顧客番号が空欄）' : '');
+          noData.push(Object.assign(base, { reason }));
+          continue;
+        }
+        rows.push(Object.assign(base, { src: src!==tool ? src : '', last7:days.slice(-7) }, monitorStats(days)));
+      }
+      lastResult = { rows, noData, cutoffYMD };
+      renderAll(true);
+    } catch(err) { alert('確認エラー: '+err.message); }
+    finally { updateBtnState(); btn.textContent='③ 順位を確認する'; }
+  }, 20);
+}
+
+// ─── 絞り込み ─────────────────────────────────────────
+const curFilter = { shisaku:'all', tool:'all', show:'bad' };
+function passFilter(r) {
+  if (curFilter.shisaku !== 'all' && (r.施策||'') !== curFilter.shisaku) return false;
+  if (curFilter.tool !== 'all' && toolKind(r.提供ツール) !== curFilter.tool) return false;
+  return true;
+}
+function buildFilterBar() {
+  const mk = (id, key, opts) => {
+    document.getElementById(id).innerHTML = opts.map(([v,l]) => `<button data-k="${key}" data-v="${v}" class="${curFilter[key]===v?'on':''}">${l}</button>`).join('');
+  };
+  mk('fbShisaku', 'shisaku', [['all','すべて'],['モノ','モノ'],['自社','自社']]);
+  mk('fbTool', 'tool', [['all','すべて'],['モノ','モノ'],['チェキ','チェキ'],['なし','なし']]);
+  mk('fbShow', 'show', [['bad','とれていないだけ'],['all','全件']]);
+}
+document.getElementById('filterBar').addEventListener('click', e => {
+  const b = e.target.closest('button[data-k]'); if (!b) return;
+  curFilter[b.dataset.k] = b.dataset.v; renderAll(false);
+});
+
+// ─── Rendering ───────────────────────────────────────────
+function chipHtml(text, style) { return `<span class="mini-chip" style="${style}">${esc(text)}</span>`; }
+function toolChip(t) { const m={'モノ':'background:#fff0d6;color:#e07b00','チェキ':'background:#e6f4ea;color:#1a8e3e'}; return chipHtml(t||'なし', m[t]||'background:#f5f5f5;color:#666'); }
+function shisakuChip(v) { const m={'モノ':'background:#fff0d6;color:#e07b00','自社':'background:#e3f2fd;color:#1565c0'}; return chipHtml(v||'（空欄）', m[v]||'background:#f5f5f5;color:#999'); }
+function renderAll(scroll) {
+  if (!lastResult) return;
+  buildFilterBar();
+  const R = lastResult, rows = R.rows.filter(passFilter), noData = R.noData.filter(passFilter);
+  const bad = rows.filter(r => r.bad).sort((a,b)=> a.rate-b.rate || b.streak-a.streak);
+  const good = rows.filter(r => !r.bad).sort((a,b)=> a.rate-b.rate);
+  const pct = v => Math.round(v*100) + '%';
+  const table = list => `<table><thead><tr><th>顧客番号</th><th>案件名</th><th>施策</th><th>提供ツール</th><th>直近30日の3位以内</th><th>連続未達</th><th>直近7日</th></tr></thead><tbody>` +
+    list.map(r => `<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${shisakuChip(r.施策)}</td><td>${toolChip(r.提供ツール)}${r.src?`<div style="font-size:10px;color:#888;margin-top:2px">${esc(r.src)}CSVで確認</div>`:''}</td>` +
+      `<td><strong style="color:${r.rate<0.3?'#b3120f':r.rate<0.7?'#b06000':'#1a8e3e'}">${pct(r.rate)}</strong><span style="color:#888;font-size:11px;margin-left:4px">（${r.wins}/${r.total}日）</span></td>` +
+      `<td>${r.streak>0?`<span style="color:${r.streak>=3?'#b3120f':'#666'};font-weight:700">${r.streak}日</span>`:'<span style="color:#aaa">-</span>'}</td><td>${renderLast7(r.last7)}</td></tr>`).join('') + `</tbody></table>`;
+  let dl=''; if (R.cutoffYMD) { const [y,m,d]=R.cutoffYMD.split('-'); dl=`<span style="font-size:12px;color:#00695c;background:#e0f2f1;padding:4px 12px;border-radius:20px;font-weight:700;">📅 ${y}年${m}月${d}日 時点</span>`; }
+  const filt = (curFilter.shisaku!=='all'||curFilter.tool!=='all') ? `<span style="font-size:11px;color:#b06000;font-weight:700">絞り込み中（施策：${curFilter.shisaku==='all'?'すべて':curFilter.shisaku}／ツール：${curFilter.tool==='all'?'すべて':curFilter.tool}）</span>` : '';
+  const section = (cls, mark, title, sub, list) => `<div class="pattern-section ${cls}"><div class="pattern-header"><div class="ph-num">${mark}</div><div><div class="ph-title">${title}</div><div class="ph-sub">${sub}</div></div><div class="ph-count">${list.length} 件</div></div>
+    <div class="pattern-body">${list.length?table(list):'<div class="empty-msg">該当するデータはありません</div>'}</div></div>`;
+  document.getElementById('captureArea').innerHTML = `
+    <div class="mon-summary">${dl}${filt}<span style="font-weight:700;color:#00695c">月額案件の順位</span>
+      <span>確認できた<strong>${rows.length}</strong>件</span>
+      <span style="color:#1a8e3e">とれている<strong>${good.length}</strong>件（${rows.length?pct(good.length/rows.length):'-'}）</span>
+      <span style="color:#b3120f">とれていない<strong>${bad.length}</strong>件</span>
+      <span style="color:#888">順位データなし<strong style="font-size:15px">${noData.length}</strong>件</span>
+      <span style="font-size:11px;color:#888;width:100%">「とれていない」＝3日連続で3位以内に入れず、その後3日連続の3位以内に戻っていない（成果報酬なら▲に落ちている状態）、または直近30日で3位以内が0日${unmeasuredChekiDays.length?`　／　⚠️ チェキ：${unmeasuredChekiDays.join('、')} は未計測日として除外`:''}</span>
+    </div>` +
+    section('p4', '!', '順位がとれていない', '達成率の低い順。解約リスクの高い順に確認・対策を', bad) +
+    (curFilter.show==='all' ? section('good', '✓', '順位がとれている', '達成率の低い順（下に行くほど安定）', good) : '');
+  document.getElementById('noDataArea').innerHTML = noData.length===0 ? '' :
+    `<div class="pattern-section" style="border-left:4px solid #888"><details class="fold"><summary>順位データなし：${noData.length} 件 ― クリックで開く（画像コピーには含まれません）</summary>
+     <table><thead><tr><th>顧客番号</th><th>案件名</th><th>施策</th><th>提供ツール</th><th>理由</th></tr></thead><tbody>` +
+     noData.map(r=>`<tr><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}</td><td>${shisakuChip(r.施策)}</td><td>${toolChip(r.提供ツール)}</td><td style="font-size:12px;color:#555">${esc(r.reason)}</td></tr>`).join('') + `</tbody></table></details></div>`;
+  const r=document.getElementById('results'); r.classList.add('visible'); if (scroll) r.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function renderLast7(days) {
+  if(!days||!days.length) return '<span style="color:#aaa;font-size:12px">データなし</span>';
+  return '<div class="day-icons-row">'+days.map(d=>`<div class="day-icon-cell" title="${d.date} ${d.win?'勝ち':'負け'}"><span class="di-icon">${d.win?'✅':'❌'}</span><span class="di-label">${d.date}</span></div>`).join('')+'</div>';
+}
+function fmtDate(d) {
+  if(!d) return '';
+  const p=String(d).trim().split('/');
+  if(p.length===3) return parseInt(p[1])+'/'+parseInt(p[2]); // 'YYYY/MM/DD'
+  if(p.length===2) return parseInt(p[0])+'/'+parseInt(p[1]);
+  return String(d);
+}
+function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ─── kintone最新取得 ──────────────────────────────
+document.getElementById('kintoneBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('kintoneBtn');
+  const status = document.getElementById('kintoneStatus');
+  btn.disabled = true;
+  status.textContent = '読み込み中...';
+  document.getElementById('kintoneSummary').classList.remove('visible');
+  try {
+    const res = await fetch(KINTONE_GAS_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const csv = await res.text();
+    if (csv.startsWith('Error:')) throw new Error(csv);
+    meoData = parseCSV(csv).filter(r => planOf(r) === 'monthly'); // 月額固定だけを対象にする
+    const now = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    status.textContent = '✅ ' + now + ' 取得完了';
+    showKintoneSummary();
+    updateBtnState();
+    checkAutoRun();
+  } catch (err) {
+    status.textContent = '❌ ' + err.message;
+    alert('kintone取得失敗：\n' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function showKintoneSummary() {
+  if (!meoData) return;
+  const cnt = (f) => meoData.filter(f).length;
+  const item = (label, n) => '<div class="ks-item"><span class="ks-label">' + label + '</span><span class="ks-value">' + n + '</span><span class="ks-rate">件</span></div>';
+  const hasPlan = meoData.length > 0 ? ('契約プラン' in meoData[0]) : true;
+  document.getElementById('kintoneSummary').innerHTML =
+    item('月額固定', meoData.length) +
+    item('施策モノ', cnt(r => (r['施策']||'').trim()==='モノ')) + item('施策自社', cnt(r => (r['施策']||'').trim()==='自社')) +
+    item('ツールなし', cnt(r => toolKind((r['提供ツール']||'').trim())==='なし')) +
+    '<div class="ks-condition"><span class="ks-cond-label">契約プラン：</span>月額固定のみ　／　<span class="ks-cond-label">ステータス：</span>施策中・施策中(要対応)・施策中(HP課金中)</div>' +
+    (meoData.length === 0 ? '<div class="ks-condition" style="color:#d93025;font-weight:700">月額固定の案件が0件です。取得データに「契約プラン」列が無い可能性があります（予備のCSVを使う場合は契約プラン・施策・モノ顧客番号の列を含めて書き出してください）</div>' : '');
+  document.getElementById('kintoneSummary').classList.add('visible');
+}
+
+// ─── 画像でコピー（判定結果／月額の順位確認 共通） ─────────────
+function bindShot(btnId, statusId, areaId, filePrefix) {
+  document.getElementById(btnId).addEventListener('click', async () => {
+    const btn = document.getElementById(btnId);
+    const st = document.getElementById(statusId);
+    const area = document.getElementById(areaId);
+    if (!lastResult) return;
+    btn.disabled = true; st.style.color = '#666'; st.textContent = '画像を生成中...';
+    const ymd = (document.getElementById('judgeDate').value || '').replace(/-/g, '');
+    const makeBlob = () => html2canvas(area, { backgroundColor: '#f5f7fa', scale: 2, useCORS: true })
+      .then(canvas => new Promise(res => canvas.toBlob(res, 'image/png')));
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        // Blobを返すPromiseを直接渡すと、クリック操作の有効期間内としてクリップボード書き込みが許可される
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': makeBlob() })]);
+        st.style.color = '#1a8e3e'; st.textContent = '✅ クリップボードにコピーしました（Ctrl+Vで貼り付け）';
+      } else {
+        throw new Error('clipboard unsupported');
+      }
+    } catch (err) {
+      // コピー不可ならPNGダウンロードにフォールバック
+      try {
+        const blob = await makeBlob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = filePrefix + ymd + '.png';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+        st.style.color = '#b06000'; st.textContent = '⚠️ コピーできなかったためPNGをダウンロードしました';
+      } catch (e2) {
+        st.style.color = '#d93025'; st.textContent = '❌ 画像生成に失敗：' + e2.message;
+      }
+    } finally { btn.disabled = false; }
+  });
+}
+bindShot('shotBtn', 'shotStatus', 'captureArea', '月額案件チェック_');
+</script>
+</body>
+</html>
