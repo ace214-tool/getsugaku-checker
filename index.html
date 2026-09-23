@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>月額案件チェック</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -172,11 +171,18 @@ details.fold > summary { cursor:pointer; padding:10px 16px; font-size:13px; font
 }
 .ks-condition .ks-cond-label { color: #555; font-weight: 700; margin-right: 2px; }
 
-.shot-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.shot-btn { background: #fff; color: #333; border: 1px solid #ccc; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
-.shot-btn:hover { border-color: #1a73e8; color: #1a73e8; }
-.shot-btn:disabled { color: #aaa; cursor: wait; }
-.shot-status { font-size: 12px; color: #1a8e3e; font-weight: 600; }
+.snap-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.snap-btn { background: #fff; color: #333; border: 1px solid #ccc; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.snap-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+.snap-btn:disabled { color: #aaa; cursor: wait; }
+.snap-btn.primary { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+.snap-btn.primary:hover { background: #1557b0; }
+.snap-status { font-size: 12px; color: #1a8e3e; font-weight: 600; }
+.snap-url { display: none; align-items: center; gap: 8px; width: 100%; margin-top: 4px; }
+.snap-url input { flex: 1; font-size: 12px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font-family: monospace; }
+.snap-banner { display: none; background: #fff8e1; border: 1px solid #f0c36d; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.7; }
+.snap-banner strong { color: #b06000; }
+body.snap-mode .kintone-zone, body.snap-mode .kintone-summary, body.snap-mode .upload-card, body.snap-mode .date-card, body.snap-mode .btn-area, body.snap-mode #snapSaveBtn, body.snap-mode .fb-note { display: none !important; }
 #captureArea { padding: 12px; }
 .download-area {
   background: white; border-radius: 12px; padding: 24px; margin-top: 20px;
@@ -207,8 +213,10 @@ details.fold > summary { cursor:pointer; padding:10px 16px; font-size:13px; font
 <div class="container">
   <header>
     <h1>月額案件チェック</h1>
-    <p>月額固定の案件が、順位（3位以内）をとれているかを確認するツールです。kintoneは一切更新しません</p>
+    <p>月額固定の案件の順位（3位以内）が順調かどうかを確認するツールです。kintoneは一切更新しません</p>
   </header>
+
+  <div class="snap-banner" id="snapBanner"></div>
 
   <div class="kintone-zone">
     <button class="kintone-btn" id="kintoneBtn">🔄 ① MEO案件管理を最新取得</button>
@@ -255,9 +263,12 @@ details.fold > summary { cursor:pointer; padding:10px 16px; font-size:13px; font
       <span><span class="fb-label">施策：</span><span id="fbShisaku"></span></span>
       <span class="fb-note">月額案件は全件を表示します。提供ツール（モノ／チェキ／なし）ごとに、順位の調子が悪い順に並べています</span>
     </div>
-    <div class="shot-bar">
-      <button class="shot-btn" id="shotBtn">📷 画像でコピー</button>
-      <span class="shot-status" id="shotStatus"></span>
+    <div class="snap-bar">
+      <button class="snap-btn primary" id="snapSaveBtn">💾 この日の結果を保存してURL発行</button>
+      <button class="snap-btn" id="copyTableBtn">📋 表をコピー（スプシ貼り付け用）</button>
+      <button class="snap-btn" id="csvTableBtn">📥 表をCSVダウンロード</button>
+      <span class="snap-status" id="snapStatus"></span>
+      <div class="snap-url" id="snapUrlBox"><input type="text" id="snapUrlInput" readonly><button class="snap-btn" id="snapUrlCopy">URLをコピー</button></div>
     </div>
     <div id="captureArea"></div>
     <div id="noDataArea" style="margin-top:12px"></div>
@@ -641,7 +652,7 @@ function runMatch() {
         const m = uid && monoUD[uid] ? monoUD[uid] : null, c = chekiUD[custNum] || null;
         const useMono = (tool==='チェキ') ? (!c && !!m) : !!m;
         const days = useMono ? m : c, src = useMono ? 'モノ' : 'チェキ';
-        const base = { 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, 施策:shisaku, status:(row['ステータス']||'').trim() };
+        const base = { 顧客番号:custNum, 案件名:row['案件名']||'', 提供ツール:tool, 施策:shisaku, ピン検証:(row['ピン検証']||'').trim(), status:(row['ステータス']||'').trim() };
         if (!days) {
           let reason;
           if (tool==='モノ' && !toolFiles.length) reason = 'モノCSVが未投入';
@@ -683,16 +694,17 @@ function renderAll(scroll) {
   buildFilterBar();
   const R = lastResult, all = R.rows.filter(passFilter);
   const pct = v => Math.round(v*100) + '%';
-  // 調子が悪い順：とれていない → とれている → データなし。同じ中では達成率の低い順、連続未達の長い順
+  // 調子が悪い順：要注意 → 順調 → データなし。同じ中では達成率の低い順、連続未達の長い順
   const rank = r => r.noData ? 2 : (r.bad ? 0 : 1);
+  const pinCell = r => `<td>${r.ピン検証?esc(r.ピン検証):'<span style="color:#aaa">-</span>'}</td>`;
   const sorter = (a,b) => rank(a)-rank(b) || (a.rate||0)-(b.rate||0) || (b.streak||0)-(a.streak||0);
   const stChip = r => (r.status && r.status!=='施策中') ? `<div style="font-size:10px;color:#b06000;margin-top:2px">${esc(r.status)}</div>` : '';
   const rowHtml = r => r.noData
-    ? `<tr style="background:#fafafa"><td><span style="color:#999;font-weight:700">－ データなし</span></td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td><td colspan="3" style="font-size:12px;color:#888">${esc(r.reason)}</td></tr>`
-    : `<tr${r.bad?' style="background:#fff5f4"':''}><td>${r.bad?'<span style="color:#b3120f;font-weight:700">● とれていない</span>':'<span style="color:#1a8e3e;font-weight:700">● とれている</span>'}</td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td>` +
+    ? `<tr style="background:#fafafa"><td><span style="color:#999;font-weight:700">－ データなし</span></td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td>${pinCell(r)}<td colspan="3" style="font-size:12px;color:#888">${esc(r.reason)}</td></tr>`
+    : `<tr${r.bad?' style="background:#fff5f4"':''}><td>${r.bad?'<span style="color:#b3120f;font-weight:700">⚠ 要注意</span>':'<span style="color:#1a8e3e;font-weight:700">◎ 順調</span>'}</td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td>${pinCell(r)}` +
       `<td><strong style="color:${r.rate<0.3?'#b3120f':r.rate<0.7?'#b06000':'#1a8e3e'}">${pct(r.rate)}</strong><span style="color:#888;font-size:11px;margin-left:4px">（${r.wins}/${r.total}日）</span>${r.src?`<div style="font-size:10px;color:#888;margin-top:2px">${esc(r.src)}CSVで確認</div>`:''}</td>` +
       `<td>${r.streak>0?`<span style="color:${r.streak>=3?'#b3120f':'#666'};font-weight:700">${r.streak}日</span>`:'<span style="color:#aaa">-</span>'}</td><td>${renderLast7(r.last7)}</td></tr>`;
-  const table = list => `<table><thead><tr><th>判定</th><th>顧客番号</th><th>案件名</th><th>施策</th><th>直近30日の3位以内</th><th>連続未達</th><th>直近7日</th></tr></thead><tbody>` + list.map(rowHtml).join('') + `</tbody></table>`;
+  const table = list => `<table><thead><tr><th>判定</th><th>顧客番号</th><th>案件名</th><th>施策</th><th>ピン検証</th><th>直近30日の3位以内</th><th>連続未達</th><th>直近7日</th></tr></thead><tbody>` + list.map(rowHtml).join('') + `</tbody></table>`;
   const GROUPS = [
     { key:'モノ',   cls:'p1',  title:'提供ツール：モノ' },
     { key:'チェキ', cls:'good', title:'提供ツール：チェキ' },
@@ -702,7 +714,7 @@ function renderAll(scroll) {
     const list = all.filter(r => toolKind(r.提供ツール) === g.key).sort(sorter);
     const nb = list.filter(r => !r.noData && r.bad).length, ng = list.filter(r => !r.noData && !r.bad).length, nn = list.filter(r => r.noData).length;
     return `<div class="pattern-section ${g.cls}" ${g.style?`style="${g.style}"`:''}><div class="pattern-header" ${g.hstyle?`style="${g.hstyle}"`:''}><div class="ph-num">${esc(g.key[0])}</div><div><div class="ph-title">${g.title}</div>
-      <div class="ph-sub">とれていない ${nb} 件 ／ とれている ${ng} 件${nn?` ／ データなし ${nn} 件`:''}　※調子が悪い順</div></div><div class="ph-count">${list.length} 件</div></div>
+      <div class="ph-sub">要注意 ${nb} 件 ／ 順調 ${ng} 件${nn?` ／ データなし ${nn} 件`:''}　※調子が悪い順</div></div><div class="ph-count">${list.length} 件</div></div>
       <div class="pattern-body">${list.length?table(list):'<div class="empty-msg">該当するデータはありません</div>'}</div></div>`;
   }).join('');
   const judged = all.filter(r => !r.noData), bad = judged.filter(r => r.bad), good = judged.filter(r => !r.bad);
@@ -711,10 +723,10 @@ function renderAll(scroll) {
   document.getElementById('captureArea').innerHTML = `
     <div class="mon-summary">${dl}${filt}<span style="font-weight:700;color:#00695c">月額案件の順位</span>
       <span>全<strong>${all.length}</strong>件</span>
-      <span style="color:#b3120f">とれていない<strong>${bad.length}</strong>件</span>
-      <span style="color:#1a8e3e">とれている<strong>${good.length}</strong>件${judged.length?`（${pct(good.length/judged.length)}）`:''}</span>
+      <span style="color:#b3120f">要注意<strong>${bad.length}</strong>件</span>
+      <span style="color:#1a8e3e">順調<strong>${good.length}</strong>件${judged.length?`（${pct(good.length/judged.length)}）`:''}</span>
       <span style="color:#888">データなし<strong style="font-size:15px">${all.length-judged.length}</strong>件</span>
-      <span style="font-size:11px;color:#888;width:100%">「とれていない」＝3日連続で3位以内に入れず、その後3日連続の3位以内に戻っていない（成果報酬なら▲に落ちている状態）、または直近30日で3位以内が0日${unmeasuredChekiDays.length?`　／　⚠️ チェキ：${unmeasuredChekiDays.join('、')} は未計測日として除外`:''}</span>
+      <span style="font-size:11px;color:#888;width:100%">「要注意」＝3日連続で3位以内に入れず、その後3日連続の3位以内に戻っていない（成果報酬なら▲に落ちている状態）、または直近30日で3位以内が0日${unmeasuredChekiDays.length?`　／　⚠️ チェキ：${unmeasuredChekiDays.join('、')} は未計測日として除外`:''}</span>
     </div>` + sections;
   document.getElementById('noDataArea').innerHTML = '';
   const r=document.getElementById('results'); r.classList.add('visible'); if (scroll) r.scrollIntoView({behavior:'smooth',block:'start'});
@@ -772,40 +784,93 @@ function showKintoneSummary() {
   document.getElementById('kintoneSummary').classList.add('visible');
 }
 
-// ─── 画像でコピー（判定結果／月額の順位確認 共通） ─────────────
-function bindShot(btnId, statusId, areaId, filePrefix) {
-  document.getElementById(btnId).addEventListener('click', async () => {
-    const btn = document.getElementById(btnId);
-    const st = document.getElementById(statusId);
-    const area = document.getElementById(areaId);
-    if (!lastResult) return;
-    btn.disabled = true; st.style.color = '#666'; st.textContent = '画像を生成中...';
-    const ymd = (document.getElementById('judgeDate').value || '').replace(/-/g, '');
-    const makeBlob = () => html2canvas(area, { backgroundColor: '#f5f7fa', scale: 2, useCORS: true })
-      .then(canvas => new Promise(res => canvas.toBlob(res, 'image/png')));
-    try {
-      if (navigator.clipboard && window.ClipboardItem) {
-        // Blobを返すPromiseを直接渡すと、クリック操作の有効期間内としてクリップボード書き込みが許可される
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': makeBlob() })]);
-        st.style.color = '#1a8e3e'; st.textContent = '✅ クリップボードにコピーしました（Ctrl+Vで貼り付け）';
-      } else {
-        throw new Error('clipboard unsupported');
-      }
-    } catch (err) {
-      // コピー不可ならPNGダウンロードにフォールバック
-      try {
-        const blob = await makeBlob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = filePrefix + ymd + '.png';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-        st.style.color = '#b06000'; st.textContent = '⚠️ コピーできなかったためPNGをダウンロードしました';
-      } catch (e2) {
-        st.style.color = '#d93025'; st.textContent = '❌ 画像生成に失敗：' + e2.message;
-      }
-    } finally { btn.disabled = false; }
-  });
+// ─── スナップショット保存（その時点の結果をGAS経由でスプレッドシートに保存し、URLを発行） ─────────────
+// meo-checker と同じGAS（saveSnapshot／?snap=ID）を共用。payload に tool:'getsugaku' を入れて区別する
+let snapMode = null; // 閲覧モード時 { id, savedAt }
+function snapPayload() {
+  const R = lastResult;
+  return { v: 1, tool: 'getsugaku', savedAt: new Date().toISOString(), cutoffYMD: R.cutoffYMD, rows: R.rows, unmeasuredChekiDays };
 }
-bindShot('shotBtn', 'shotStatus', 'captureArea', '月額案件チェック_');
+document.getElementById('snapSaveBtn').addEventListener('click', async () => {
+  if (!lastResult) return;
+  const btn = document.getElementById('snapSaveBtn'), st = document.getElementById('snapStatus');
+  btn.disabled = true; st.style.color = '#666'; st.textContent = '保存中...';
+  try {
+    // Content-Type を text/plain にすると GAS でも CORS のプリフライトが発生せず POST できる
+    const res = await fetch(KINTONE_GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'saveSnapshot', payload: snapPayload() }) });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || '保存失敗');
+    const url = location.origin + location.pathname + '?snap=' + j.id;
+    document.getElementById('snapUrlInput').value = url;
+    document.getElementById('snapUrlBox').style.display = 'flex';
+    st.style.color = '#1a8e3e'; st.textContent = '✅ 保存しました';
+    try { await navigator.clipboard.writeText(url); st.textContent += '（URLをクリップボードにコピー済み）'; } catch (e) {}
+  } catch (err) { st.style.color = '#d93025'; st.textContent = '❌ 保存に失敗：' + err.message; }
+  finally { btn.disabled = false; }
+});
+document.getElementById('snapUrlCopy').addEventListener('click', async () => {
+  const inp = document.getElementById('snapUrlInput'); inp.select();
+  try { await navigator.clipboard.writeText(inp.value); document.getElementById('snapStatus').textContent = '✅ URLをコピーしました'; } catch (e) { document.execCommand('copy'); }
+});
+
+// 閲覧モード：?snap=ID があればGASから取得して表示だけする（入力欄は隠す）
+async function loadSnapshotFromUrl() {
+  const id = new URLSearchParams(location.search).get('snap');
+  if (!id) return;
+  document.body.classList.add('snap-mode');
+  const banner = document.getElementById('snapBanner');
+  banner.style.display = 'block'; banner.innerHTML = '保存済みの結果を読み込み中...';
+  try {
+    const res = await fetch(KINTONE_GAS_URL + '?snap=' + encodeURIComponent(id));
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || '取得失敗');
+    const d = j.data;
+    if (d.tool && d.tool !== 'getsugaku') throw new Error('このIDはMEO照合ツールの保存データです。meo-checker側のURLで開いてください');
+    snapMode = { id, savedAt: d.savedAt };
+    unmeasuredChekiDays = d.unmeasuredChekiDays || [];
+    lastResult = { rows: d.rows || [], noData: [], cutoffYMD: d.cutoffYMD };
+    const saved = new Date(d.savedAt).toLocaleString('ja-JP');
+    banner.innerHTML = `<strong>📌 保存済みの結果（閲覧モード）</strong>　判定日：${esc(d.cutoffYMD)}　／　保存日時：${esc(saved)}<br>` +
+      `この画面は保存時点のデータです。最新の確認をするには <a href="${location.pathname}">通常画面</a> を開いてください。`;
+    renderAll(false);
+  } catch (err) { banner.innerHTML = '<strong>❌ 保存データを読み込めませんでした：</strong>' + esc(err.message); }
+}
+loadSnapshotFromUrl();
+
+// ─── 表をコピー／CSV（表示中の絞り込みを反映・調子が悪い順） ─────────────
+const TABLE_HEAD = ['判定日','提供ツール','判定','顧客番号','案件名','施策','ピン検証','ステータス','直近30日の3位以内','連続未達','直近7日','備考'];
+function tableRows() {
+  const R = lastResult; if (!R) return [];
+  const rank = r => r.noData ? 2 : (r.bad ? 0 : 1);
+  const sorter = (a,b) => rank(a)-rank(b) || (a.rate||0)-(b.rate||0) || (b.streak||0)-(a.streak||0);
+  const out = [];
+  ['モノ','チェキ','なし'].forEach(k => {
+    R.rows.filter(passFilter).filter(r => toolKind(r.提供ツール) === k).sort(sorter).forEach(r => {
+      const last7 = (r.last7 || []).map(d => d.date + (d.win ? '✅' : '❌')).join(' ');
+      out.push([R.cutoffYMD, k, r.noData ? 'データなし' : (r.bad ? '要注意' : '順調'), r.顧客番号, r.案件名, r.施策 || '', r.ピン検証 || '', r.status || '',
+                r.noData ? '' : Math.round((r.rate||0)*100) + '%（' + r.wins + '/' + r.total + '日）', r.noData ? '' : (r.streak > 0 ? r.streak + '日' : '-'),
+                last7, r.noData ? (r.reason || '') : (r.src ? r.src + 'CSVで確認' : '')]);
+    });
+  });
+  return out;
+}
+document.getElementById('copyTableBtn').addEventListener('click', async () => {
+  const st = document.getElementById('snapStatus');
+  const rows = tableRows(); if (!rows.length) { st.style.color = '#d93025'; st.textContent = 'コピーする行がありません'; return; }
+  const tsv = [TABLE_HEAD, ...rows].map(r => r.map(v => String(v).replace(/\t/g, ' ')).join('\t')).join('\n');
+  try { await navigator.clipboard.writeText(tsv); st.style.color = '#1a8e3e'; st.textContent = '✅ ' + rows.length + '行をコピーしました（スプレッドシートにそのまま貼り付け可）'; }
+  catch (e) { st.style.color = '#d93025'; st.textContent = '❌ コピーできませんでした：' + e.message; }
+});
+document.getElementById('csvTableBtn').addEventListener('click', () => {
+  const rows = tableRows(); if (!rows.length) return;
+  const q = v => { v = String(v).replace(/"/g, '""'); return /[",\n]/.test(v) ? '"' + v + '"' : v; };
+  const csv = [TABLE_HEAD, ...rows].map(r => r.map(q).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = '月額案件チェック_' + (lastResult.cutoffYMD || '').replace(/-/g, '') + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+});
 </script>
 </body>
 </html>
