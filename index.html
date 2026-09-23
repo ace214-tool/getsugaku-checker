@@ -107,6 +107,9 @@ tbody td:nth-child(3) { white-space: normal; min-width: 140px; max-width: 220px;
 .day-icon-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .day-icon-cell .di-label { font-size: 9px; color: #aaa; line-height: 1; }
 .day-icon-cell .di-icon { font-size: 15px; line-height: 1; }
+.day-icon-cell .di-num { font-size: 12px; font-weight: 700; width: 22px; height: 20px; line-height: 20px; text-align: center; border-radius: 4px; }
+.day-icon-cell .di-win { background: #d4edda; color: #1a6e2e; }
+.day-icon-cell .di-lose { background: #f8d7da; color: #b3120f; }
 
 .p1 .pattern-header { background: linear-gradient(135deg, #f6a623, #e07b00); }
 .p3 .pattern-header { background: linear-gradient(135deg, #1a73e8, #0b47a1); }
@@ -515,13 +518,14 @@ function buildMonoDailyResults(files, cutoffYMD) {
         if (v === '') continue; // 空セル＝未計測（その日のデータ無し）。「圏外」は計測済みの負け
         const n = parseInt(v);
         const win = !isNaN(n) && n >= 1 && n <= 3;
-        m[key] = (m[key] || false) || win; // 同一日は複数KW行のどれか1つでも3位以内なら勝ち
+        const c = m[key] = m[key] || { cnt:0, kw:0 }; // 同一日の複数KW行を集計
+        c.kw++; if (win) c.cnt++;
       }
     }
   }
   const result = {};
   for (const [uid, m] of Object.entries(byUser)) {
-    result[uid] = Object.keys(m).sort().map(k => ({ key: k, date: keyToLabel(k), win: m[k] }));
+    result[uid] = Object.keys(m).sort().map(k => ({ key: k, date: keyToLabel(k), win: m[k].cnt > 0, cnt: m[k].cnt, kw: m[k].kw }));
   }
   return result;
 }
@@ -557,13 +561,14 @@ function buildChekiDailyResults(files, cutoffYMD) {
         if (v === '' || !measured[d]) continue;
         const key = ymdKey(f.year, f.month, d);
         if (cutoffKey && key > cutoffKey) continue;
-        m[key] = v === '◯' || v === '○' || v === '〇';
+        const c = m[key] = m[key] || { cnt:0, kw:0 }; // 同一日の複数行（KW）を集計
+        c.kw++; if (v === '◯' || v === '○' || v === '〇') c.cnt++;
       }
     }
   }
   const result = {};
   for (const [custId, m] of Object.entries(byCust)) {
-    result[custId] = Object.keys(m).sort().map(k => ({ key: k, date: keyToLabel(k), win: m[k] }));
+    result[custId] = Object.keys(m).sort().map(k => ({ key: k, date: keyToLabel(k), win: m[k].cnt > 0, cnt: m[k].cnt, kw: m[k].kw }));
   }
   return result;
 }
@@ -663,7 +668,7 @@ function runMatch() {
           rows.push(Object.assign(base, { noData:true, reason }));
           continue;
         }
-        rows.push(Object.assign(base, { noData:false, src: src!==tool ? src : '', last7:days.slice(-7) }, monitorStats(days)));
+        rows.push(Object.assign(base, { noData:false, src: src!==tool ? src : '', dataSrc: src, last7:days.slice(-7) }, monitorStats(days)));
       }
       lastResult = { rows, noData, cutoffYMD };
       renderAll(true);
@@ -705,7 +710,7 @@ function renderAll(scroll) {
     ? `<tr style="background:#fafafa"><td><span style="color:#999;font-weight:700">－ データなし</span></td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td><td colspan="3" style="font-size:12px;color:#888">${esc(r.reason)}</td>${pinCell(r)}</tr>`
     : `<tr${r.bad?' style="background:#fff5f4"':''}><td>${r.bad?'<span style="color:#b3120f;font-weight:700">⚠ 要注意</span>':'<span style="color:#1a8e3e;font-weight:700">◎ 順調</span>'}</td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td>` +
       `<td><strong style="color:${r.rate<0.3?'#b3120f':r.rate<0.7?'#b06000':'#1a8e3e'}">${pct(r.rate)}</strong><span style="color:#888;font-size:11px;margin-left:4px">（${r.wins}/${r.total}日）</span>${r.src?`<div style="font-size:10px;color:#888;margin-top:2px">${esc(r.src)}CSVで確認</div>`:''}</td>` +
-      `<td>${r.streak>0?`<span style="color:${r.streak>=3?'#b3120f':'#666'};font-weight:700">${r.streak}日</span>`:'<span style="color:#aaa">-</span>'}</td><td>${renderLast7(r.last7)}</td>${pinCell(r)}</tr>`;
+      `<td>${r.streak>0?`<span style="color:${r.streak>=3?'#b3120f':'#666'};font-weight:700">${r.streak}日</span>`:'<span style="color:#aaa">-</span>'}</td><td>${renderLast7(r.last7, r.dataSrc==='モノ')}</td>${pinCell(r)}</tr>`;
   const table = list => `<table><thead><tr><th>判定</th><th>顧客番号</th><th>案件名</th><th>施策</th><th>直近30日の3位以内</th><th>連続未達</th><th>直近7日</th><th>単価(税抜)</th><th>ピン検証</th><th>投稿頻度</th></tr></thead><tbody>` + list.map(rowHtml).join('') + `</tbody></table>`;
   const GROUPS = [
     { key:'モノ',   cls:'p1',  title:'提供ツール：モノ' },
@@ -733,8 +738,10 @@ function renderAll(scroll) {
   document.getElementById('noDataArea').innerHTML = '';
   const r=document.getElementById('results'); r.classList.add('visible'); if (scroll) r.scrollIntoView({behavior:'smooth',block:'start'});
 }
-function renderLast7(days) {
+function renderLast7(days, numeric) {
   if(!days||!days.length) return '<span style="color:#aaa;font-size:12px">データなし</span>';
+  // モノ提供の場合のみ「3位以内のワード数」を数字で表示。チェキは従来どおり✅／❌
+  if (numeric) return '<div class="day-icons-row">'+days.map(d=>`<div class="day-icon-cell" title="${d.date}：3位以内 ${d.cnt||0}ワード／計測 ${d.kw||0}ワード"><span class="di-icon di-num ${d.win?'di-win':'di-lose'}">${d.cnt||0}</span><span class="di-label">${d.date}</span></div>`).join('')+'</div>';
   return '<div class="day-icons-row">'+days.map(d=>`<div class="day-icon-cell" title="${d.date} ${d.win?'勝ち':'負け'}"><span class="di-icon">${d.win?'✅':'❌'}</span><span class="di-label">${d.date}</span></div>`).join('')+'</div>';
 }
 function fmtDate(d) {
@@ -852,7 +859,7 @@ function tableRows() {
   const out = [];
   ['モノ','チェキ','なし'].forEach(k => {
     R.rows.filter(passFilter).filter(r => toolKind(r.提供ツール) === k).sort(sorter).forEach(r => {
-      const last7 = (r.last7 || []).map(d => d.date + (d.win ? '✅' : '❌')).join(' ');
+      const last7 = (r.last7 || []).map(d => d.date + (r.dataSrc==='モノ' ? ':' + (d.cnt||0) : (d.win ? '✅' : '❌'))).join(' ');
       out.push([R.cutoffYMD, k, r.noData ? 'データなし' : (r.bad ? '要注意' : '順調'), r.顧客番号, r.案件名, r.施策 || '', r.status || '',
                 r.noData ? '' : Math.round((r.rate||0)*100) + '%（' + r.wins + '/' + r.total + '日）', r.noData ? '' : (r.streak > 0 ? r.streak + '日' : '-'),
                 last7, r.単価 || '', r.ピン検証 || '', r.投稿頻度 || '', r.noData ? (r.reason || '') : (r.src ? r.src + 'CSVで確認' : '')]);
