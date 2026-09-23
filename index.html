@@ -668,7 +668,7 @@ function runMatch() {
           rows.push(Object.assign(base, { noData:true, reason }));
           continue;
         }
-        rows.push(Object.assign(base, { noData:false, src: src!==tool ? src : '', dataSrc: src, last7:days.slice(-7) }, monitorStats(days)));
+        rows.push(Object.assign(base, { noData:false, src: src!==tool ? src : '', dataSrc: src, last7:days.slice(-7), monoLast7: m ? m.slice(-7) : null, chekiLast7: c ? c.slice(-7) : null }, monitorStats(days)));
       }
       lastResult = { rows, noData, cutoffYMD };
       renderAll(true);
@@ -706,12 +706,16 @@ function renderAll(scroll) {
   const pinCell = r => `<td>${yen(r.単価)}</td><td>${r.ピン検証?esc(r.ピン検証):'<span style="color:#aaa">-</span>'}</td><td>${r.投稿頻度?esc(r.投稿頻度):'<span style="color:#aaa">-</span>'}</td>`;
   const sorter = (a,b) => rank(a)-rank(b) || (a.rate||0)-(b.rate||0) || (b.streak||0)-(a.streak||0) || String(b.顧客番号||'').localeCompare(String(a.顧客番号||''), 'ja', {numeric:true});
   const stChip = r => (r.status && r.status!=='施策中') ? `<div style="font-size:10px;color:#b06000;margin-top:2px">${esc(r.status)}</div>` : '';
-  const rowHtml = r => r.noData
-    ? `<tr style="background:#fafafa"><td><span style="color:#999;font-weight:700">－ データなし</span></td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td><td colspan="3" style="font-size:12px;color:#888">${esc(r.reason)}</td>${pinCell(r)}</tr>`
+  const dash = '<span style="color:#aaa">-</span>';
+  const rowHtml = (r, two) => r.noData
+    ? `<tr style="background:#fafafa"><td><span style="color:#999;font-weight:700">－ データなし</span></td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td><td colspan="${two?3:2}" style="font-size:12px;color:#888">${esc(r.reason)}</td>${pinCell(r)}</tr>`
     : `<tr${r.bad?' style="background:#fff5f4"':''}><td>${r.bad?'<span style="color:#b3120f;font-weight:700">⚠ 要注意</span>':'<span style="color:#1a8e3e;font-weight:700">◎ 順調</span>'}</td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td>` +
       `<td><strong style="color:${r.rate<0.3?'#b3120f':r.rate<0.7?'#b06000':'#1a8e3e'}">${pct(r.rate)}</strong><span style="color:#888;font-size:11px;margin-left:4px">（${r.wins}/${r.total}日）</span>${r.src?`<div style="font-size:10px;color:#888;margin-top:2px">${esc(r.src)}CSVで確認</div>`:''}</td>` +
-      `<td>${r.streak>0?`<span style="color:${r.streak>=3?'#b3120f':'#666'};font-weight:700">${r.streak}日</span>`:'<span style="color:#aaa">-</span>'}</td><td>${renderLast7(r.last7, r.dataSrc==='モノ')}</td>${pinCell(r)}</tr>`;
-  const table = list => `<table><thead><tr><th>判定</th><th>顧客番号</th><th>案件名</th><th>施策</th><th>直近30日の3位以内</th><th>連続未達</th><th>直近7日</th><th>単価(税抜)</th><th>ピン検証</th><th>投稿頻度</th></tr></thead><tbody>` + list.map(rowHtml).join('') + `</tbody></table>`;
+      (two
+        ? `<td>${r.monoLast7 ? renderLast7(r.monoLast7, true) : dash}</td><td>${r.chekiLast7 ? renderLast7(r.chekiLast7, false) : dash}</td>`
+        : `<td>${renderLast7(r.last7, r.dataSrc==='モノ')}</td>`) + `${pinCell(r)}</tr>`;
+  // 提供ツール：チェキ の表は「モノ直近7日（ワード数）」と「チェキ直近7日（✅❌）」を分けて表示
+  const table = (list, two) => `<table><thead><tr><th>判定</th><th>顧客番号</th><th>案件名</th><th>施策</th><th>直近30日の3位以内</th>${two?'<th>モノ直近7日</th><th>チェキ直近7日</th>':'<th>直近7日</th>'}<th>単価(税抜)</th><th>ピン検証</th><th>投稿頻度</th></tr></thead><tbody>` + list.map(r => rowHtml(r, two)).join('') + `</tbody></table>`;
   const GROUPS = [
     { key:'モノ',   cls:'p1',  title:'提供ツール：モノ' },
     { key:'チェキ', cls:'good', title:'提供ツール：チェキ' },
@@ -722,7 +726,7 @@ function renderAll(scroll) {
     const nb = list.filter(r => !r.noData && r.bad).length, ng = list.filter(r => !r.noData && !r.bad).length, nn = list.filter(r => r.noData).length;
     return `<div class="pattern-section ${g.cls}" ${g.style?`style="${g.style}"`:''}><div class="pattern-header" ${g.hstyle?`style="${g.hstyle}"`:''}><div class="ph-num">${esc(g.key[0])}</div><div><div class="ph-title">${g.title}</div>
       <div class="ph-sub">要注意 ${nb} 件 ／ 順調 ${ng} 件${nn?` ／ データなし ${nn} 件`:''}　※調子が悪い順</div></div><div class="ph-count">${list.length} 件</div></div>
-      <div class="pattern-body">${list.length?table(list):'<div class="empty-msg">該当するデータはありません</div>'}</div></div>`;
+      <div class="pattern-body">${list.length?table(list, g.key==='チェキ'):'<div class="empty-msg">該当するデータはありません</div>'}</div></div>`;
   }).join('');
   const judged = all.filter(r => !r.noData), bad = judged.filter(r => r.bad), good = judged.filter(r => !r.bad);
   let dl=''; if (R.cutoffYMD) { const [y,m,d]=R.cutoffYMD.split('-'); dl=`<span style="font-size:12px;color:#00695c;background:#e0f2f1;padding:4px 12px;border-radius:20px;font-weight:700;">📅 ${y}年${m}月${d}日 時点</span>`; }
@@ -851,7 +855,7 @@ async function loadSnapshotFromUrl() {
 loadSnapshotFromUrl();
 
 // ─── 表をコピー／CSV（表示中の絞り込みを反映・調子が悪い順） ─────────────
-const TABLE_HEAD = ['判定日','提供ツール','判定','顧客番号','案件名','施策','ステータス','直近30日の3位以内','連続未達','直近7日','単価(税抜)','ピン検証','投稿頻度','備考'];
+const TABLE_HEAD = ['判定日','提供ツール','判定','顧客番号','案件名','施策','ステータス','直近30日の3位以内','モノ直近7日','チェキ直近7日','単価(税抜)','ピン検証','投稿頻度','備考'];
 function tableRows() {
   const R = lastResult; if (!R) return [];
   const rank = r => r.noData ? 2 : (r.bad ? 0 : 1);
@@ -859,10 +863,11 @@ function tableRows() {
   const out = [];
   ['モノ','チェキ','なし'].forEach(k => {
     R.rows.filter(passFilter).filter(r => toolKind(r.提供ツール) === k).sort(sorter).forEach(r => {
-      const last7 = (r.last7 || []).map(d => d.date + (r.dataSrc==='モノ' ? ':' + (d.cnt||0) : (d.win ? '✅' : '❌'))).join(' ');
+      const mono7  = (r.monoLast7  || []).map(d => d.date + ':' + (d.cnt||0)).join(' ');
+      const cheki7 = (r.chekiLast7 || []).map(d => d.date + (d.win ? '✅' : '❌')).join(' ');
       out.push([R.cutoffYMD, k, r.noData ? 'データなし' : (r.bad ? '要注意' : '順調'), r.顧客番号, r.案件名, r.施策 || '', r.status || '',
-                r.noData ? '' : Math.round((r.rate||0)*100) + '%（' + r.wins + '/' + r.total + '日）', r.noData ? '' : (r.streak > 0 ? r.streak + '日' : '-'),
-                last7, r.単価 || '', r.ピン検証 || '', r.投稿頻度 || '', r.noData ? (r.reason || '') : (r.src ? r.src + 'CSVで確認' : '')]);
+                r.noData ? '' : Math.round((r.rate||0)*100) + '%（' + r.wins + '/' + r.total + '日）',
+                mono7, cheki7, r.単価 || '', r.ピン検証 || '', r.投稿頻度 || '', r.noData ? (r.reason || '') : (r.src ? r.src + 'CSVで確認' : '')]);
     });
   });
   return out;
