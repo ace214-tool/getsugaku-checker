@@ -695,11 +695,11 @@ function renderAll(scroll) {
   buildFilterBar();
   const R = lastResult, all = R.rows.filter(passFilter);
   const pct = v => Math.round(v*100) + '%';
-  // 調子が悪い順：要注意 → 順調 → データなし。同じ中では達成率の低い順、連続未達の長い順
+  // 調子が悪い順：要注意 → 順調 → データなし。同じ中では達成率の低い順、連続未達の長い順、それも同じなら顧客番号の大きい順（若い番号が下）
   const rank = r => r.noData ? 2 : (r.bad ? 0 : 1);
   const yen = v => { if(!v) return '<span style="color:#aaa">-</span>'; const n=Number(String(v).replace(/[,円]/g,'')); return isNaN(n)?esc(v):n.toLocaleString()+'円'; };
   const pinCell = r => `<td>${yen(r.単価)}</td><td>${r.ピン検証?esc(r.ピン検証):'<span style="color:#aaa">-</span>'}</td><td>${r.投稿頻度?esc(r.投稿頻度):'<span style="color:#aaa">-</span>'}</td>`;
-  const sorter = (a,b) => rank(a)-rank(b) || (a.rate||0)-(b.rate||0) || (b.streak||0)-(a.streak||0);
+  const sorter = (a,b) => rank(a)-rank(b) || (a.rate||0)-(b.rate||0) || (b.streak||0)-(a.streak||0) || String(b.顧客番号||'').localeCompare(String(a.顧客番号||''), 'ja', {numeric:true});
   const stChip = r => (r.status && r.status!=='施策中') ? `<div style="font-size:10px;color:#b06000;margin-top:2px">${esc(r.status)}</div>` : '';
   const rowHtml = r => r.noData
     ? `<tr style="background:#fafafa"><td><span style="color:#999;font-weight:700">－ データなし</span></td><td><strong>${esc(r.顧客番号)}</strong></td><td>${esc(r.案件名)}${stChip(r)}</td><td>${shisakuChip(r.施策)}</td><td colspan="3" style="font-size:12px;color:#888">${esc(r.reason)}</td>${pinCell(r)}</tr>`
@@ -848,7 +848,7 @@ const TABLE_HEAD = ['判定日','提供ツール','判定','顧客番号','案�
 function tableRows() {
   const R = lastResult; if (!R) return [];
   const rank = r => r.noData ? 2 : (r.bad ? 0 : 1);
-  const sorter = (a,b) => rank(a)-rank(b) || (a.rate||0)-(b.rate||0) || (b.streak||0)-(a.streak||0);
+  const sorter = (a,b) => rank(a)-rank(b) || (a.rate||0)-(b.rate||0) || (b.streak||0)-(a.streak||0) || String(b.顧客番号||'').localeCompare(String(a.顧客番号||''), 'ja', {numeric:true});
   const out = [];
   ['モノ','チェキ','なし'].forEach(k => {
     R.rows.filter(passFilter).filter(r => toolKind(r.提供ツール) === k).sort(sorter).forEach(r => {
